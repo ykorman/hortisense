@@ -1,4 +1,4 @@
-/*  All rights reserverd to CleverBit Ltd.
+/*  All rights reserved to CleverBit Ltd.
     2019
 */
 
@@ -33,15 +33,16 @@
 
 #define TIMEZONE_HOUR_OFFSET    3 /* Israel Daylight Time (IDT) offset from UTC */
 
-#define EEPROM_ADDR     0
-#define EEPROM_SIZE     512
+#define EEPROM_STATE_ADDR     0
+#define EEPROM_REMAIN_ADDR    1
+#define EEPROM_SIZE           512
 
-#define TIME_HOUR     (1000000UL * 60 * 60)
-
+#define TIME_HOUR           (1000000UL * 60 * 60)
+#define MAX_SLEEP_HOURS     3 /* ESP.deepSleepMax() => 13503037433 */
 
 #define DEBUG_SENSOR_DELAY (1000000UL * 5) /* 5 seconds */
 
-const bool DEBUG_SENSOR = false; /* don't do deep sleep, just a short delay and then reset */
+const bool DEBUG_SENSOR = true; /* don't do deep sleep, just a short delay and then reset */
 
 struct sensor_state {
   int     read_hour;
@@ -62,9 +63,9 @@ WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
 
 uint8_t state_index;
+uint8_t hours_remaining;
 int current_hour;
 int sensor_reading;
-int sleep_for;
 
 int serial_setup() {
   Serial.begin(115200);
@@ -127,7 +128,7 @@ int upload_reading() {
   url += String("sensor_id=") + String(CLIENT_ID) + String("&reading=") + String(sensor_reading);
   /* DEBUG */
   url += String("&current_hour=") + String(current_hour) + String("&state_index=") + String(state_index) +
-         String("&sleep_for=") + String(sleep_for);
+         String("&sleep_for=") + String(hours_remaining);
 
   DEBUG("HTTP request url: %s\n", url.c_str());
 
@@ -152,50 +153,65 @@ int upload_reading() {
 
 int eeprom_read() {
   EEPROM.begin(EEPROM_SIZE);
-  state_index = EEPROM.read(EEPROM_ADDR);
-  DEBUG("read state index %d\n", state_index);
+  /* note that EEPROM.read/write only handle a byte at a time */
+  state_index = EEPROM.read(EEPROM_STATE_ADDR);
+  hours_remaining = EEPROM.read(EEPROM_REMAIN_ADDR);
+  DEBUG("read state index %d, hours remaining %d\n", state_index, hours_remaining);
 
   return 0;
 }
 
 int eeprom_write() {
   EEPROM.begin(EEPROM_SIZE);
-  EEPROM.write(EEPROM_ADDR, state_index);
-  DEBUG("wrote state index %d\n", state_index);
+  EEPROM.write(EEPROM_STATE_ADDR, state_index);
+  EEPROM.write(EEPROM_REMAIN_ADDR, hours_remaining);
+  DEBUG("wrote state index %d, hours remaining %d\n", state_index, hours_remaining);
 
   return 0;
 }
 
 void suspend() {
-  DEBUG("going to sleep for %d hours\n", sleep_for);
+  DEBUG("going to sleep for %d hours\n", hours_remaining);
   if (DEBUG_SENSOR) {
     DEBUG("DEBUG - Going to sleep for %d\n", DEBUG_SENSOR_DELAY);
     delay(DEBUG_SENSOR_DELAY);
     ESP.restart();
   } else {
-    ESP.deepSleep(sleep_for * TIME_HOUR);
+    if (hours_remaining > MAX_SLEEP_HOURS)
+      ESP.deepSleep(MAX_SLEEP_HOURS * TIME_HOUR, RF_DISABLED);
+    else
+      ESP.deepSleep(hours_remaining * TIME_HOUR, RF_DEFAULT);
   }
 }
 
 int calc_sleep() {
   int next_read_hour = my_state[state_index + 1].read_hour;
 
+  if (hours_remaining > MAX_SLEEP_HOURS) {
+    hours_remaining -= MAX_SLEEP_HOURS;
+    return 0;
+  }
+
   if (next_read_hour == -1) { /* wrap-around */
     DEBUG("handling wraparound...\n");
     state_index = 1;
     next_read_hour = my_state[1].read_hour;
-    sleep_for = 24 + next_read_hour - current_hour;
+    hours_remaining = 24 + next_read_hour - current_hour;
   } else {
     state_index += 1;
-    sleep_for = next_read_hour - current_hour;
+    hours_remaining = next_read_hour - current_hour;
   }
 
   return 0;
 }
 
 int init_state() {
+  /* if state_index != 255 then we're already initialized */
+  if (state_index != 255)
+    return 0;
+
+  /* need to calculate next sleep and state */
   if (state_index == 0 || state_index == 255) {
-    /* need to calculate next sleep and state */
     int i;
 
     for (i = 0; my_state[i].read_hour != -1; ++i) {
@@ -223,6 +239,22 @@ void setup() {
   if (err) {
     ERROR("EEPROM read failed => %d\n", err);
     return;
+  }
+
+  if (hours_remaining > MAX_SLEEP_HOURS) {
+    err = calc_sleep();
+    if (err) {
+      ERROR("Sleep calculation failed => %d\n", err);
+      return;
+    }
+
+    err = eeprom_write();
+    if (err) {
+      ERROR("EEPROM write failed => %d\n", err);
+      return;
+    }
+
+    suspend();
   }
 
   err = wifi_connect();
