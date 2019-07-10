@@ -4,7 +4,7 @@
 
 //#define DEBUG_ESP_HTTP_CLIENT
 //#define DEBUG_ESP_SSL
-//#define DEBUG_ESP_CORE
+#define DEBUG_ESP_CORE
 //#define DEBUG_ESP_WIFI
 //#define DEBUG_ESP_OOM
 
@@ -45,15 +45,15 @@
 const bool DEBUG_SENSOR = true; /* don't do deep sleep, just a short delay and then reset */
 
 struct sensor_state {
-  int     read_hour;
-  String  wall_time_str;
+	int     read_hour;
+	String  wall_time_str;
 } my_state[] = { /* 5, 11, 14, 16 */
-  { 0,  "NaN"   }, /* this means we need to ask for NTP time and calculate the correct state */
-  { 5,  "5:00"  },
-  { 11, "11:00" },
-  { 14, "14:00" },
-  { 16, "16:00" },
-  { -1, ""      }, /* -1 means end of array */
+	{ 0,  "NaN"   }, /* this means we need to ask for NTP time and calculate the correct state */
+	{ 5,  "5:00"  },
+	{ 11, "11:00" },
+	{ 14, "14:00" },
+	{ 16, "16:00" },
+	{ -1, ""      }, /* -1 means end of array */
 };
 
 ESP8266WiFiMulti wifi_client;
@@ -68,238 +68,238 @@ int current_hour;
 int sensor_reading;
 
 int serial_setup() {
-  Serial.begin(115200);
-  if (DEBUG_SENSOR)
-    Serial.setDebugOutput(true);
-  Serial.setTimeout(2000);
-  while (!Serial) {}
+	Serial.begin(115200);
+	if (DEBUG_SENSOR)
+		Serial.setDebugOutput(true);
+	Serial.setTimeout(2000);
+	while (!Serial) {}
 
-  DEBUG("Connected to serial port\n");
+	DEBUG("Connected to serial port\n");
 
-  return 0;
+	return 0;
 }
 
 int wifi_connect() {
-  int retries = WIFI_RETRIES;
+	int retries = WIFI_RETRIES;
 
-  WiFi.mode(WIFI_STA);
-  wifi_client.addAP(WIFI_SSID, WIFI_PASSWORD);
-  while ((wifi_client.run() != WL_CONNECTED) && retries > 0) {
-    delay(WIFI_DELAY);
-  }
+	WiFi.mode(WIFI_STA);
+	wifi_client.addAP(WIFI_SSID, WIFI_PASSWORD);
+	while ((wifi_client.run() != WL_CONNECTED) && retries > 0) {
+		delay(WIFI_DELAY);
+	}
 
-  if (wifi_client.run() != WL_CONNECTED) {
-    ERROR("Wifi connection failed, run=%d\n", wifi_client.run());
-    return -1;
-  }
+	if (wifi_client.run() != WL_CONNECTED) {
+		ERROR("Wifi connection failed, run=%d\n", wifi_client.run());
+		return -1;
+	}
 
-  return 0;
+	return 0;
 }
 
 int get_time() {
-  timeClient.begin();
-  /* FIXME: add retry here, it fails sometimes */
-  if (!timeClient.forceUpdate()) {
-    ERROR("Failed to force NTP update\n");
-    return -1;
-  }
-  current_hour = timeClient.getHours() + TIMEZONE_HOUR_OFFSET;   /* return the hour of the day in UTC (24 hour clock) */
-  timeClient.end();
-  DEBUG("current hour = %d\n", current_hour);
+	timeClient.begin();
+	/* FIXME: add retry here, it fails sometimes */
+	if (!timeClient.forceUpdate()) {
+		ERROR("Failed to force NTP update\n");
+		return -1;
+	}
+	current_hour = timeClient.getHours() + TIMEZONE_HOUR_OFFSET;   /* return the hour of the day in UTC (24 hour clock) */
+	timeClient.end();
+	DEBUG("current hour = %d\n", current_hour);
 
-  return 0;
+	return 0;
 }
 
 int read_sensor() {
-  sensor_reading = analogRead(SENSOR_PIN);
+	sensor_reading = analogRead(SENSOR_PIN);
 
-  DEBUG("Got analog reading of %d\n", sensor_reading);
+	DEBUG("Got analog reading of %d\n", sensor_reading);
 
-  return 0;
+	return 0;
 }
 
 int upload_reading() {
-  String url = String("https://script.google.com/macros/s/AKfycbzOcsNRdSiyISag2sByJOp8E96_M3Ezh8u4qw2c/exec?");
-  HTTPClient https;
-  int http_code;
+	String url = String("https://script.google.com/macros/s/AKfycbzOcsNRdSiyISag2sByJOp8E96_M3Ezh8u4qw2c/exec?");
+	HTTPClient https;
+	int http_code;
 
-  https_client.setInsecure();
+	https_client.setInsecure();
 
-  url += String("sensor_id=") + String(CLIENT_ID) + String("&reading=") + String(sensor_reading);
-  /* DEBUG */
-  url += String("&current_hour=") + String(current_hour) + String("&state_index=") + String(state_index) +
-         String("&sleep_for=") + String(hours_remaining);
+	url += String("sensor_id=") + String(CLIENT_ID) + String("&reading=") + String(sensor_reading);
+	/* DEBUG */
+	url += String("&current_hour=") + String(current_hour) + String("&state_index=") + String(state_index) +
+	       String("&sleep_for=") + String(hours_remaining);
 
-  DEBUG("HTTP request url: %s\n", url.c_str());
+	DEBUG("HTTP request url: %s\n", url.c_str());
 
-  if (https.begin(https_client, url)) {
-    http_code = https.GET();
+	if (https.begin(https_client, url)) {
+		http_code = https.GET();
 
-    if (http_code == HTTP_CODE_OK || http_code == HTTP_CODE_FOUND) {
-      String payload = https.getString();
+		if (http_code == HTTP_CODE_OK || http_code == HTTP_CODE_FOUND) {
+			String payload = https.getString();
 
-      DEBUG("HTTP Code: %s\n", https.errorToString(http_code).c_str());
-      if (DEBUG_SENSOR)
-        Serial.println(payload);
-    } else {
-      ERROR("HTTP GET failed => %s (%d)\n", https.errorToString(http_code).c_str(), http_code);
-    }
+			DEBUG("HTTP Code: %s\n", https.errorToString(http_code).c_str());
+			if (DEBUG_SENSOR)
+				Serial.println(payload);
+		} else {
+			ERROR("HTTP GET failed => %s (%d)\n", https.errorToString(http_code).c_str(), http_code);
+		}
 
-    https.end();
-  }
+		https.end();
+	}
 
-  return 0;
+	return 0;
 }
 
 int eeprom_read() {
-  EEPROM.begin(EEPROM_SIZE);
-  /* note that EEPROM.read/write only handle a byte at a time */
-  state_index = EEPROM.read(EEPROM_STATE_ADDR);
-  hours_remaining = EEPROM.read(EEPROM_REMAIN_ADDR);
-  DEBUG("read state index %d, hours remaining %d\n", state_index, hours_remaining);
+	EEPROM.begin(EEPROM_SIZE);
+	/* note that EEPROM.read/write only handle a byte at a time */
+	state_index = EEPROM.read(EEPROM_STATE_ADDR);
+	hours_remaining = EEPROM.read(EEPROM_REMAIN_ADDR);
+	DEBUG("read state index %d, hours remaining %d\n", state_index, hours_remaining);
 
-  return 0;
+	return 0;
 }
 
 int eeprom_write() {
-  EEPROM.begin(EEPROM_SIZE);
-  EEPROM.write(EEPROM_STATE_ADDR, state_index);
-  EEPROM.write(EEPROM_REMAIN_ADDR, hours_remaining);
-  DEBUG("wrote state index %d, hours remaining %d\n", state_index, hours_remaining);
+	EEPROM.begin(EEPROM_SIZE);
+	EEPROM.write(EEPROM_STATE_ADDR, state_index);
+	EEPROM.write(EEPROM_REMAIN_ADDR, hours_remaining);
+	DEBUG("wrote state index %d, hours remaining %d\n", state_index, hours_remaining);
 
-  return 0;
+	return 0;
 }
 
 void suspend() {
-  DEBUG("going to sleep for %d hours\n", hours_remaining);
-  if (DEBUG_SENSOR) {
-    DEBUG("DEBUG - Going to sleep for %d\n", DEBUG_SENSOR_DELAY);
-    delay(DEBUG_SENSOR_DELAY);
-    ESP.restart();
-  } else {
-    if (hours_remaining > MAX_SLEEP_HOURS)
-      ESP.deepSleep(MAX_SLEEP_HOURS * TIME_HOUR, RF_DISABLED);
-    else
-      ESP.deepSleep(hours_remaining * TIME_HOUR, RF_DEFAULT);
-  }
+	DEBUG("going to sleep for %d hours\n", hours_remaining);
+	if (DEBUG_SENSOR) {
+		DEBUG("DEBUG - Going to sleep for %d\n", DEBUG_SENSOR_DELAY);
+		delay(DEBUG_SENSOR_DELAY);
+		ESP.restart();
+	} else {
+		if (hours_remaining > MAX_SLEEP_HOURS)
+			ESP.deepSleep(MAX_SLEEP_HOURS * TIME_HOUR, RF_DISABLED);
+		else
+			ESP.deepSleep(hours_remaining * TIME_HOUR, RF_DEFAULT);
+	}
 }
 
 int calc_sleep() {
-  int next_read_hour = my_state[state_index + 1].read_hour;
+	int next_read_hour = my_state[state_index + 1].read_hour;
 
-  if (hours_remaining > MAX_SLEEP_HOURS) {
-    hours_remaining -= MAX_SLEEP_HOURS;
-    return 0;
-  }
+	if (hours_remaining > MAX_SLEEP_HOURS) {
+		hours_remaining -= MAX_SLEEP_HOURS;
+		return 0;
+	}
 
-  if (next_read_hour == -1) { /* wrap-around */
-    DEBUG("handling wraparound...\n");
-    state_index = 1;
-    next_read_hour = my_state[1].read_hour;
-    hours_remaining = 24 + next_read_hour - current_hour;
-  } else {
-    state_index += 1;
-    hours_remaining = next_read_hour - current_hour;
-  }
+	if (next_read_hour == -1) { /* wrap-around */
+		DEBUG("handling wraparound...\n");
+		state_index = 1;
+		next_read_hour = my_state[1].read_hour;
+		hours_remaining = 24 + next_read_hour - current_hour;
+	} else {
+		state_index += 1;
+		hours_remaining = next_read_hour - current_hour;
+	}
 
-  return 0;
+	return 0;
 }
 
 int init_state() {
-  /* if state_index != 255 then we're already initialized */
-  if (state_index != 255)
-    return 0;
+	/* if state_index != 255 then we're already initialized */
+	if (state_index != 255)
+		return 0;
 
-  /* need to calculate next sleep and state */
-  if (state_index == 0 || state_index == 255) {
-    int i;
+	/* need to calculate next sleep and state */
+	if (state_index == 0 || state_index == 255) {
+		int i;
 
-    for (i = 0; my_state[i].read_hour != -1; ++i) {
-      if (current_hour < my_state[i].read_hour)
-        break;
-    }
+		for (i = 0; my_state[i].read_hour != -1; ++i) {
+			if (current_hour < my_state[i].read_hour)
+				break;
+		}
 
-    if (i == 0)
-      while (my_state[++i].read_hour != -1);
+		if (i == 0)
+			while (my_state[++i].read_hour != -1);
 
-    state_index = i - 1;
-  }
+		state_index = i - 1;
+	}
 
-  return 0;
+	return 0;
 }
 
 void setup() {
-  int err;
+	int err;
 
-  err = serial_setup();
-  if (err)
-    return;
+	err = serial_setup();
+	if (err)
+		return;
 
-  err = eeprom_read();
-  if (err) {
-    ERROR("EEPROM read failed => %d\n", err);
-    return;
-  }
+	err = eeprom_read();
+	if (err) {
+		ERROR("EEPROM read failed => %d\n", err);
+		return;
+	}
 
-  if (hours_remaining > MAX_SLEEP_HOURS) {
-    err = calc_sleep();
-    if (err) {
-      ERROR("Sleep calculation failed => %d\n", err);
-      return;
-    }
+	if (hours_remaining > MAX_SLEEP_HOURS) {
+		err = calc_sleep();
+		if (err) {
+			ERROR("Sleep calculation failed => %d\n", err);
+			return;
+		}
 
-    err = eeprom_write();
-    if (err) {
-      ERROR("EEPROM write failed => %d\n", err);
-      return;
-    }
+		err = eeprom_write();
+		if (err) {
+			ERROR("EEPROM write failed => %d\n", err);
+			return;
+		}
 
-    suspend();
-  }
+		suspend();
+	}
 
-  err = wifi_connect();
-  if (err) {
-    ERROR("Wifi connect failed => %d\n", err);
-    return;
-  }
+	err = wifi_connect();
+	if (err) {
+		ERROR("Wifi connect failed => %d\n", err);
+		return;
+	}
 
-  err = get_time();
-  if (err) {
-    ERROR("Time retrieval failed => %d\n", err);
-    return;
-  }
+	err = get_time();
+	if (err) {
+		ERROR("Time retrieval failed => %d\n", err);
+		return;
+	}
 
-  err = init_state();
-  if (err) {
-    ERROR("State init failed => %d\n", err);
-    return;
-  }
+	err = init_state();
+	if (err) {
+		ERROR("State init failed => %d\n", err);
+		return;
+	}
 
-  err = calc_sleep();
-  if (err) {
-    ERROR("Sleep calculation failed => %d\n", err);
-    return;
-  }
+	err = calc_sleep();
+	if (err) {
+		ERROR("Sleep calculation failed => %d\n", err);
+		return;
+	}
 
-  err = read_sensor();
-  if (err) {
-    ERROR("Sensor reading failed => %d\n", err);
-    return;
-  }
+	err = read_sensor();
+	if (err) {
+		ERROR("Sensor reading failed => %d\n", err);
+		return;
+	}
 
-  err = upload_reading();
-  if (err) {
-    ERROR("Upload failed => %d\n", err);
-    return;
-  }
+	err = upload_reading();
+	if (err) {
+		ERROR("Upload failed => %d\n", err);
+		return;
+	}
 
-  err = eeprom_write();
-  if (err) {
-    ERROR("EEPROM write failed => %d\n", err);
-    return;
-  }
+	err = eeprom_write();
+	if (err) {
+		ERROR("EEPROM write failed => %d\n", err);
+		return;
+	}
 
-  suspend();
+	suspend();
 }
 
 void loop() {
