@@ -4,7 +4,7 @@
 
 //#define DEBUG_ESP_HTTP_CLIENT
 //#define DEBUG_ESP_SSL
-#define DEBUG_ESP_CORE
+//#define DEBUG_ESP_CORE
 //#define DEBUG_ESP_WIFI
 //#define DEBUG_ESP_OOM
 
@@ -37,12 +37,14 @@
 #define EEPROM_REMAIN_ADDR    1
 #define EEPROM_SIZE           512
 
+#define STATE_INVALID	255
+
 #define TIME_HOUR           (1000000UL * 60 * 60)
 #define MAX_SLEEP_HOURS     3 /* ESP.deepSleepMax() => 13503037433 */
 
 #define DEBUG_SENSOR_DELAY (1000000UL * 5) /* 5 seconds */
 
-const bool DEBUG_SENSOR = true; /* don't do deep sleep, just a short delay and then reset */
+const bool DEBUG_SENSOR = false; /* don't do deep sleep, just a short delay and then reset */
 
 struct sensor_state {
 	int     read_hour;
@@ -173,7 +175,7 @@ int eeprom_write() {
 void suspend() {
 	DEBUG("going to sleep for %d hours\n", hours_remaining);
 	if (DEBUG_SENSOR) {
-		DEBUG("DEBUG - Going to sleep for %d\n", DEBUG_SENSOR_DELAY);
+		DEBUG("DEBUG - Going to sleep for %lu\n", DEBUG_SENSOR_DELAY);
 		delay(DEBUG_SENSOR_DELAY);
 		ESP.restart();
 	} else {
@@ -206,24 +208,28 @@ int calc_sleep() {
 }
 
 int init_state() {
+	int i;
 	/* if state_index != 255 then we're already initialized */
-	if (state_index != 255)
+	if (state_index != STATE_INVALID) {
+		DEBUG("state already initialized\n");
 		return 0;
+	}
 
 	/* need to calculate next sleep and state */
-	if (state_index == 0 || state_index == 255) {
-		int i;
-
-		for (i = 0; my_state[i].read_hour != -1; ++i) {
-			if (current_hour < my_state[i].read_hour)
-				break;
-		}
-
-		if (i == 0)
-			while (my_state[++i].read_hour != -1);
-
-		state_index = i - 1;
+	for (i = 0; my_state[i].read_hour != -1; ++i) {
+		if (current_hour < my_state[i].read_hour)
+			break;
 	}
+
+	if (i == 0)
+		while (my_state[++i].read_hour != -1);
+
+	state_index = i - 1;
+
+	/* always reset hours_remaining if initializing state */
+	hours_remaining = 0;
+
+	DEBUG("calculated state index %d\n", state_index);
 
 	return 0;
 }
@@ -241,7 +247,7 @@ void setup() {
 		return;
 	}
 
-	if (hours_remaining > MAX_SLEEP_HOURS) {
+	if (hours_remaining > MAX_SLEEP_HOURS && state_index != STATE_INVALID) {
 		err = calc_sleep();
 		if (err) {
 			ERROR("Sleep calculation failed => %d\n", err);
